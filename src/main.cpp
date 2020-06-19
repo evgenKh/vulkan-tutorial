@@ -87,13 +87,22 @@ private:
         return VK_FALSE;
     }
 
+    static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+        app->isFramebufferResized = true;
+    }
+
     void initWindow()
     {
         glfwInit();
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
         glfwWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+
+        glfwSetWindowUserPointer(glfwWindow, this);//Pass this to callback
+        glfwSetFramebufferSizeCallback(glfwWindow, framebufferResizeCallback);
     }
+
 
     void initVulkan()
     {
@@ -421,7 +430,13 @@ private:
         }
         else
         {
-            VkExtent2D actualExtent = {WIDTH, HEIGHT};
+            int width, height;
+            glfwGetFramebufferSize(glfwWindow, &width, &height);
+
+            VkExtent2D actualExtent = {
+                static_cast<uint32_t>(width),
+                static_cast<uint32_t>(height)
+            };
 
             actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
             actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
@@ -848,6 +863,25 @@ private:
             }
         }
     }
+
+    void recreateSwapChain() {
+        //Handle minimize
+        int width = 0, height = 0;
+        glfwGetFramebufferSize(glfwWindow, &width, &height);
+        while (width == 0 || height == 0) {
+            glfwGetFramebufferSize(glfwWindow, &width, &height);
+            glfwWaitEvents();
+        }
+        
+        vkDeviceWaitIdle(device);//Wait
+
+        createSwapChain();
+        createImageViews();
+        createRenderPass();
+        createGraphicsPipeline();
+        createFramebuffers();
+        createCommandBuffers();
+    }
     //--------------------------------------------------------------
 
     //DRAW
@@ -858,10 +892,20 @@ private:
         vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, 10000000000);
 
         uint32_t imageIndex;
-        //TODO: handle failure
-        vkAcquireNextImageKHR(device, swapChain, UINT64_MAX,
-         imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
         
+        VkResult acquireResult =
+            vkAcquireNextImageKHR(device, swapChain, UINT64_MAX,
+            imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+
+        //Catch window resize here
+        if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR) {
+            recreateSwapChain();
+            isFramebufferResized = false;
+            return;
+        } else if (acquireResult != VK_SUCCESS && acquireResult != VK_SUBOPTIMAL_KHR) {
+            throw std::runtime_error("failed to acquire swap chain image!");
+        }
+
         // Check if a previous frame is using this image (i.e. there is its fence to wait on)
         if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
             vkWaitForFences(device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
@@ -910,8 +954,17 @@ private:
         presentInfo.pImageIndices = &imageIndex;//image aquired index
         presentInfo.pResults = nullptr; // Optional for multi swap chains
 
-        //TODO: handle failure
-        vkQueuePresentKHR(presentQueue, &presentInfo);
+        
+        VkResult presentResult = vkQueuePresentKHR(presentQueue, &presentInfo);
+
+        //Catch window resize here too
+        if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR || isFramebufferResized) {
+            isFramebufferResized = false;
+            recreateSwapChain();
+        } else if (presentResult != VK_SUCCESS) {
+            throw std::runtime_error("failed to present swap chain image!");
+        }
+
         vkQueueWaitIdle(presentQueue);
 
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;  
@@ -933,8 +986,8 @@ private:
 
     void cleanup()
     {
-        //draw
-
+        cleanupSwapChain();
+        
         //init
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
@@ -942,16 +995,7 @@ private:
             vkDestroyFence(device,inFlightFences[i], nullptr);
         }
         vkDestroyCommandPool(device, commandPool, nullptr);
-        for (auto framebuffer : swapChainFramebuffers) {
-            vkDestroyFramebuffer(device, framebuffer, nullptr);
-        }
-        vkDestroyPipeline(device, graphicsPipeline, nullptr);
-        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-        vkDestroyRenderPass(device, renderPass, nullptr);
-        for (auto imageView : swapChainImageViews) {
-            vkDestroyImageView(device, imageView, nullptr);
-        }
-        vkDestroySwapchainKHR(device, swapChain, nullptr);
+        
         vkDestroyDevice(device, nullptr);
         vkDestroySurfaceKHR(instance, surface, nullptr);
         if (enableValidationLayers) {
@@ -960,6 +1004,21 @@ private:
         vkDestroyInstance(instance, nullptr);
         glfwDestroyWindow(glfwWindow);
         glfwTerminate();
+    }
+
+    void cleanupSwapChain() {
+        for (auto framebuffer : swapChainFramebuffers) {
+            vkDestroyFramebuffer(device, framebuffer, nullptr);
+        }
+
+        vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+        vkDestroyPipeline(device, graphicsPipeline, nullptr);
+        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+        vkDestroyRenderPass(device, renderPass, nullptr);
+        for (auto imageView : swapChainImageViews) {
+            vkDestroyImageView(device, imageView, nullptr);
+        }
+        vkDestroySwapchainKHR(device, swapChain, nullptr);
     }
 
     GLFWwindow *glfwWindow;
@@ -990,6 +1049,8 @@ private:
     std::vector<VkFence> inFlightFences;//CPU-GPU sync
     std::vector<VkFence> imagesInFlight;
     size_t currentFrame{ 0 };
+
+    bool isFramebufferResized = false;
 
 
 };
