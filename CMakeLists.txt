@@ -12,9 +12,14 @@ set(CMAKE_BUILD_TYPE Debug)
 
 set(HEADERS_DIRS "src")
 
-set(SOURCES "src/main.cpp" )
-set(HEADERS "")
-add_executable(Tutorial ${SOURCES} ${HEADERS})
+set(SOURCES "src/main.cpp"
+            "src/VulkanDriver.cpp"
+            "src/Application.cpp" )
+
+set(HEADERS "src/VulkanDriver.h"
+            "src/Application.h")
+
+add_executable(Tutorial ${HEADERS} ${SOURCES} )
 
 set(GLFW_PATH "/home/kharj/Projects/Onboarding/glfw/bin/bin-x64")
 set(GLM_PATH "/home/kharj/Projects/Onboarding/glm")
