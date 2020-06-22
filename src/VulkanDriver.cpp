@@ -17,6 +17,7 @@
 #include <fstream>
 
 #include "VulkanDriver.h"
+#include "QueueUtils.h"
 
 const int MAX_FRAMES_IN_FLIGHT = 2;//to pocess simtaneously
 
@@ -92,12 +93,16 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
         createSurface(glfwWindow);
         pickPhysicalDevice();
         createLogicalDevice();
-        createSwapChain();
-        createImageViews();
+
+        int frameBufferWidth, frameBufferHeight;
+        glfwGetFramebufferSize(glfwWindow, &frameBufferWidth, &frameBufferHeight);
+
+        swapChainUtils.createSwapChain(physicalDevice, device, surface, frameBufferWidth, frameBufferHeight);
+        swapChainUtils.createImageViews(device);
         createRenderPass();
         createDescriptorSetLayout();//uniforms
         createGraphicsPipeline();
-        createFramebuffers();
+        swapChainUtils.createFramebuffers(device, renderPass);
         createCommandPool();
         createVertexBuffer();
         createIndexBuffer();
@@ -247,13 +252,13 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
 
     bool VulkanDriver::isDeviceSuitable(VkPhysicalDevice device)
     {
-        QueueFamilyIndices indices = findQueueFamilies(device);
+        QueueUtils::QueueFamilyIndices indices = QueueUtils::findQueueFamilies(device, surface);
         bool extensionsSupported = checkDeviceExtensionSupport(device);
 
         bool swapChainAdequate = false;
         if (extensionsSupported)
         {
-            SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
+            SwapChainUtils::SwapChainSupportDetails swapChainSupport = swapChainUtils.querySwapChainSupport(device, surface);
             swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
         }
 
@@ -277,46 +282,10 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
 
         return requiredExtensions.empty();
     }
-
-    VulkanDriver::QueueFamilyIndices VulkanDriver::findQueueFamilies(VkPhysicalDevice device)
-    {
-        QueueFamilyIndices indices;
-        // Logic to find queue family indices to populate struct with
-        uint32_t queueFamilyCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-
-        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
-
-        int i = 0;
-        for (const auto &queueFamily : queueFamilies)
-        {
-            if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-            {
-                indices.graphicsFamily = i;
-            }
-
-            VkBool32 presentSupport = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
-            if (presentSupport)
-            {
-                indices.presentFamily = i;
-            }
-
-            if (indices.isComplete())
-            {
-                break;
-            }
-
-            i++;
-        }
-        return indices;
-    }
-
     void VulkanDriver::createLogicalDevice()
     {
         //Queues
-        QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+        QueueUtils::QueueFamilyIndices indices = QueueUtils::findQueueFamilies(physicalDevice, surface);
         std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
         {
             std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
@@ -364,155 +333,6 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
         vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
     }
 
-    VulkanDriver::SwapChainSupportDetails VulkanDriver::querySwapChainSupport(VkPhysicalDevice device)
-    {
-        SwapChainSupportDetails details;
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
-
-        uint32_t formatCount;
-        vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
-        if (formatCount != 0)
-        {
-            details.formats.resize(formatCount);
-            vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, details.formats.data());
-        }
-
-        uint32_t presentModeCount;
-        vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
-
-        if (presentModeCount != 0)
-        {
-            details.presentModes.resize(presentModeCount);
-            vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, details.presentModes.data());
-        }
-
-        return details;
-    }
-
-    VkSurfaceFormatKHR VulkanDriver::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats)
-    {
-        for (const auto &availableFormat : availableFormats)
-        {
-            if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
-                availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-            {
-                return availableFormat;
-            }
-        }
-        return availableFormats[0]; //fallback
-    }
-    VkPresentModeKHR VulkanDriver::chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes)
-    {
-        if (std::find(availablePresentModes.begin(), availablePresentModes.end(), VK_PRESENT_MODE_MAILBOX_KHR) != availablePresentModes.end())
-        {
-            return VK_PRESENT_MODE_MAILBOX_KHR; //prefer tripple-buffer
-        }
-        return VK_PRESENT_MODE_FIFO_KHR; //fallback
-    }
-    VkExtent2D VulkanDriver::chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities)
-    {
-        if (capabilities.currentExtent.width != UINT32_MAX)
-        {
-            return capabilities.currentExtent;
-        }
-        else
-        {
-            int width, height;
-            glfwGetFramebufferSize(glfwWindow, &width, &height);
-
-            VkExtent2D actualExtent = {
-                static_cast<uint32_t>(width),
-                static_cast<uint32_t>(height)
-            };
-
-            actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
-            actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
-
-            return actualExtent;
-        }
-    }
-
-    void VulkanDriver::createSwapChain()
-    {
-        SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
-
-        VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
-        VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
-        VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
-
-        uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
-        if (swapChainSupport.capabilities.maxImageCount != 0)
-        {
-            imageCount = std::min(imageCount, swapChainSupport.capabilities.maxImageCount);
-        }
-
-        VkSwapchainCreateInfoKHR createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-        createInfo.surface = surface;
-        createInfo.minImageCount = imageCount;
-        createInfo.imageFormat = surfaceFormat.format;
-        createInfo.imageColorSpace = surfaceFormat.colorSpace;
-        createInfo.imageExtent = extent;
-        createInfo.imageArrayLayers = 1;
-        createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-        QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
-        uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
-
-        //Two queue families
-        if (indices.graphicsFamily != indices.presentFamily) {
-            createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-            createInfo.queueFamilyIndexCount = 2;
-            createInfo.pQueueFamilyIndices = queueFamilyIndices;
-        } else {
-            createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            createInfo.queueFamilyIndexCount = 0; // Optional
-            createInfo.pQueueFamilyIndices = nullptr; // Optional
-        }
-
-        createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
-        createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        createInfo.presentMode = presentMode;
-        createInfo.clipped = VK_TRUE;
-
-        if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create swap chain!");
-        }
-
-        vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
-        swapChainImages.resize(imageCount);
-        vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
-
-        swapChainImageFormat = surfaceFormat.format;
-        swapChainExtent = extent;
-    }
-
-    void VulkanDriver::createImageViews() {
-        swapChainImageViews.resize(swapChainImages.size());
-        for (size_t i = 0; i < swapChainImages.size(); i++) {
-            VkImageViewCreateInfo createInfo{};
-            createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-            createInfo.image = swapChainImages[i];
-            createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-            createInfo.format = swapChainImageFormat;
-
-            createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-            createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-            createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-            createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-
-            createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            createInfo.subresourceRange.baseMipLevel = 0;
-            createInfo.subresourceRange.levelCount = 1;
-            createInfo.subresourceRange.baseArrayLayer = 0;
-            createInfo.subresourceRange.layerCount = 1;
-
-            if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
-                throw std::runtime_error("failed to create image views!");
-            }
-        }
-    }
-
     void VulkanDriver::createGraphicsPipeline()
     {
         std::vector<char> vertShaderCode = readFile("data/shaders/shader_vert.spv");
@@ -552,14 +372,14 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width = (float) swapChainExtent.width;
-        viewport.height = (float) swapChainExtent.height;
+        viewport.width = (float) swapChainUtils.GetExtent().width;
+        viewport.height = (float) swapChainUtils.GetExtent().height;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
 
         VkRect2D scissorRect{};
         scissorRect.offset = {0, 0};
-        scissorRect.extent = swapChainExtent;
+        scissorRect.extent = swapChainUtils.GetExtent();
 
         VkPipelineViewportStateCreateInfo viewportState{};
         viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -696,7 +516,7 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
     void VulkanDriver::createRenderPass()
     {
         VkAttachmentDescription colorAttachment{};
-        colorAttachment.format = swapChainImageFormat;
+        colorAttachment.format = swapChainUtils.GetFormat();
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
 
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -742,33 +562,9 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
 
     }
 
-    void VulkanDriver::createFramebuffers()
-    {
-        swapChainFramebuffers.resize(swapChainImageViews.size());
-            
-        for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-            VkImageView attachments[] = {
-                swapChainImageViews[i]
-            };
-
-            VkFramebufferCreateInfo framebufferInfo{};
-            framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-            framebufferInfo.renderPass = renderPass;
-            framebufferInfo.attachmentCount = 1;
-            framebufferInfo.pAttachments = attachments;
-            framebufferInfo.width = swapChainExtent.width;
-            framebufferInfo.height = swapChainExtent.height;
-            framebufferInfo.layers = 1;
-
-            if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
-                throw std::runtime_error("failed to create framebuffer!");
-            }
-        }
-    }
-
     void VulkanDriver::createCommandPool()
     {
-        QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+        QueueUtils::QueueFamilyIndices queueFamilyIndices = QueueUtils::findQueueFamilies(physicalDevice, surface);
 
         VkCommandPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -825,11 +621,12 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
     void VulkanDriver::createUniformBuffers()
     {
         VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+        size_t imagesCount = swapChainUtils.GetImagesCount();
 
-        uniformBuffers.resize(swapChainImages.size());
-        uniformBuffersMemory.resize(swapChainImages.size());
+        uniformBuffers.resize(imagesCount);
+        uniformBuffersMemory.resize(imagesCount);
         //For each image
-        for (size_t i = 0; i < swapChainImages.size(); i++) {
+        for (size_t i = 0; i < imagesCount; i++) {
             createBufferInternal(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
              uniformBuffers[i], uniformBuffersMemory[i]);
@@ -840,13 +637,13 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
     {
         VkDescriptorPoolSize poolSize{};
         poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+        poolSize.descriptorCount = static_cast<uint32_t>(swapChainUtils.GetImagesCount());
         
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = 1;
         poolInfo.pPoolSizes = &poolSize;
-        poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
+        poolInfo.maxSets = static_cast<uint32_t>(swapChainUtils.GetImagesCount());
 
         if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
             throw std::runtime_error("failed to create descriptor pool!");
@@ -927,7 +724,7 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
 
     void VulkanDriver::createCommandBuffers()
     {
-        commandBuffers.resize(swapChainFramebuffers.size());
+        commandBuffers.resize(swapChainUtils.swapChainFramebuffers.size());
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.commandPool = commandPool;
@@ -953,9 +750,9 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
             VkRenderPassBeginInfo renderPassInfo{};
             renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
             renderPassInfo.renderPass = renderPass;
-            renderPassInfo.framebuffer = swapChainFramebuffers[i];
+            renderPassInfo.framebuffer = swapChainUtils.swapChainFramebuffers[i];
             renderPassInfo.renderArea.offset = {0, 0};
-            renderPassInfo.renderArea.extent = swapChainExtent;
+            renderPassInfo.renderArea.extent = swapChainUtils.GetExtent();
             VkClearValue clearColor = {0.0f, 0.0f, 0.0f, 1.0f};
             renderPassInfo.clearValueCount = 1;
             renderPassInfo.pClearValues = &clearColor;
@@ -987,7 +784,7 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
         imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
         renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
         inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-        imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
+        imagesInFlight.resize(swapChainUtils.GetImagesCount(), VK_NULL_HANDLE);
 
         VkSemaphoreCreateInfo semaphoreInfo{};
         semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -1018,11 +815,11 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
         
         vkDeviceWaitIdle(device);//Wait
 
-        createSwapChain();
-        createImageViews();
+        swapChainUtils.createSwapChain(physicalDevice,device, surface, width, height);
+        swapChainUtils.createImageViews(device);
         createRenderPass();
         createGraphicsPipeline();
-        createFramebuffers();
+        swapChainUtils.createFramebuffers(device, renderPass);
         createUniformBuffers();
         createDescriptorPool();
         createDescriptorSets();
@@ -1051,20 +848,21 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
 
     void VulkanDriver::createDescriptorSets()
     {
-        std::vector<VkDescriptorSetLayout> layouts(swapChainImages.size(), descriptorSetLayout);
+        size_t imagesCount = swapChainUtils.GetImagesCount();
+        std::vector<VkDescriptorSetLayout> layouts(imagesCount, descriptorSetLayout);
 
         VkDescriptorSetAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         allocInfo.descriptorPool = descriptorPool;
-        allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+        allocInfo.descriptorSetCount = static_cast<uint32_t>(imagesCount);
         allocInfo.pSetLayouts = layouts.data();
 
-        descriptorSets.resize(swapChainImages.size());
+        descriptorSets.resize(imagesCount);
         if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate descriptor sets!");
         }
 
-        for (size_t i = 0; i < swapChainImages.size(); i++) {
+        for (size_t i = 0; i < imagesCount; i++) {
             VkDescriptorBufferInfo bufferInfo{};
             bufferInfo.buffer = uniformBuffers[i];
             bufferInfo.offset = 0;
@@ -1097,7 +895,7 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
         uint32_t imageIndex;
         
         VkResult acquireResult =
-            vkAcquireNextImageKHR(device, swapChain, UINT64_MAX,
+            vkAcquireNextImageKHR(device, swapChainUtils.swapChain, UINT64_MAX,
             imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
 
         //Catch window resize here
@@ -1153,7 +951,7 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
         presentInfo.waitSemaphoreCount = 1;
         presentInfo.pWaitSemaphores = signalSemaphores;
 
-        VkSwapchainKHR swapChains[] = {swapChain};
+        VkSwapchainKHR swapChains[] = {swapChainUtils.swapChain};
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = swapChains;
         presentInfo.pImageIndices = &imageIndex;//image aquired index
@@ -1188,7 +986,8 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
 
         ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 
-        ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
+        ubo.proj = glm::perspective(glm::radians(45.0f),
+         swapChainUtils.GetExtent().width / (float) swapChainUtils.GetExtent().height, 0.1f, 10.0f);
         ubo.proj[1][1] *= -1; //Flip Y (vulkan/opengl difference)
         
         void* data;
@@ -1202,7 +1001,7 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
         cleanupSwapChain();
 
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-        for (size_t i = 0; i < swapChainImages.size(); i++) {
+        for (size_t i = 0; i < swapChainUtils.GetImagesCount(); i++) {
             vkDestroyBuffer(device, uniformBuffers[i], nullptr);
             vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
         }
@@ -1231,7 +1030,9 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
     }
 
     void VulkanDriver::cleanupSwapChain() {
-        for (auto framebuffer : swapChainFramebuffers) {
+        swapChainUtils.cleanupSwapChain(device);
+        
+        for (auto framebuffer : swapChainUtils.swapChainFramebuffers) {
             vkDestroyFramebuffer(device, framebuffer, nullptr);
         }
 
@@ -1239,10 +1040,11 @@ void VulkanDriver::initVulkan(uint32_t width, uint32_t height, GLFWwindow* glfwW
         vkDestroyPipeline(device, graphicsPipeline, nullptr);
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
         vkDestroyRenderPass(device, renderPass, nullptr);
-        for (auto imageView : swapChainImageViews) {
+        for (auto imageView : swapChainUtils.swapChainImageViews) {
             vkDestroyImageView(device, imageView, nullptr);
         }
-        vkDestroySwapchainKHR(device, swapChain, nullptr);
+        vkDestroySwapchainKHR(device, swapChainUtils.swapChain, nullptr);
+        
     }
 
     void VulkanDriver::waitDeviceIdle()

@@ -12,26 +12,12 @@
 #include <array>
 #include <string>
 
+#include "SwapChainUtils.h"
+
 class VulkanDriver
 {
 public:
-
-    struct QueueFamilyIndices
-    {
-        std::optional<uint32_t> graphicsFamily;
-        std::optional<uint32_t> presentFamily;
-
-        bool isComplete()
-        {
-            return graphicsFamily.has_value() && presentFamily.has_value();
-        }
-    };
-    struct SwapChainSupportDetails
-    {
-        VkSurfaceCapabilitiesKHR capabilities;
-        std::vector<VkSurfaceFormatKHR> formats;
-        std::vector<VkPresentModeKHR> presentModes;
-    };
+  
 
     struct Vertex {
         glm::vec2 pos;
@@ -84,26 +70,22 @@ private:
 
     void createInstance();
     void setupDebugMessenger();
+
     bool checkValidationLayerSupport();
     std::vector<const char*> getRequiredExtensionsInstance();
+
     void createSurface(GLFWwindow* glfwWindow);
     void pickPhysicalDevice();
     bool isDeviceSuitable(VkPhysicalDevice device);
     bool checkDeviceExtensionSupport(VkPhysicalDevice device);
-    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
+
     void createLogicalDevice();
-    SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
-    VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats);
-    VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes);
-    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities);
-    void createSwapChain();
-    void createImageViews();
     void createRenderPass();
+
     void createDescriptorSetLayout();//uniforms
     void createGraphicsPipeline();
     std::vector<char> readFile(const std::string& filename);
     VkShaderModule createShaderModule(const std::vector<char>& code);
-    void createFramebuffers();
     void createCommandPool();
     void createVertexBuffer();
     void createIndexBuffer();
@@ -117,6 +99,8 @@ private:
     void createSyncObjects();
 
     void recreateSwapChain();
+    
+
     void cleanupSwapChain();
 
     void updateUniformBuffer(uint32_t currentImageIndex);
@@ -135,13 +119,8 @@ private:
     VkQueue graphicsQueue;
     VkQueue presentQueue;
     VkSurfaceKHR surface;
-
-    VkSwapchainKHR swapChain;
-    VkFormat swapChainImageFormat;
-    VkExtent2D swapChainExtent;
-    std::vector<VkImage> swapChainImages;
-    std::vector<VkImageView> swapChainImageViews;
-    std::vector<VkFramebuffer> swapChainFramebuffers;
+    
+    SwapChainUtils swapChainUtils;
     
     VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout;

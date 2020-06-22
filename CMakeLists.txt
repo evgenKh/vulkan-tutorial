@@ -13,10 +13,14 @@ set(CMAKE_BUILD_TYPE Debug)
 set(HEADERS_DIRS "src")
 
 set(SOURCES "src/main.cpp"
+            "src/QueueUtils.cpp"
+            "src/SwapChainUtils.cpp"
             "src/VulkanDriver.cpp"
             "src/Application.cpp" )
 
-set(HEADERS "src/VulkanDriver.h"
+set(HEADERS  "src/QueueUtils.h"
+            "src/SwapChainUtils.h"
+            "src/VulkanDriver.h"
             "src/Application.h")
 
 add_executable(Tutorial ${HEADERS} ${SOURCES} )
