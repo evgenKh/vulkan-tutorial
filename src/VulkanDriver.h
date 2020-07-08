@@ -91,13 +91,27 @@ private:
     void createIndexBuffer();
     void createUniformBuffers();
     void createDescriptorPool();
+
+    //Buffers
     void createBufferInternal(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+    VkCommandBuffer beginSingleTimeCommands();
+    void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+
     void createDescriptorSets();
     void createCommandBuffers();
     void createSyncObjects();
 
+    //Textures
+    void createTextureImage();
+    void createImageInternal(uint32_t width, uint32_t height,
+        VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
+        VkImage& image, VkDeviceMemory& imageMemory);
+    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+
+    
     void recreateSwapChain();
     
 
@@ -147,6 +161,10 @@ private:
     std::vector<VkDeviceMemory> uniformBuffersMemory;
     VkDescriptorPool descriptorPool;
     std::vector<VkDescriptorSet> descriptorSets;
+
+    //texture
+    VkImage textureImage;
+    VkDeviceMemory textureImageMemory;
 
 
 };

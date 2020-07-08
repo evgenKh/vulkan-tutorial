@@ -18,7 +18,8 @@ set(SOURCES "src/main.cpp"
             "src/VulkanDriver.cpp"
             "src/Application.cpp" )
 
-set(HEADERS  "src/QueueUtils.h"
+set(HEADERS  "src/stb_image.h"
+            "src/QueueUtils.h"
             "src/SwapChainUtils.h"
             "src/VulkanDriver.h"
             "src/Application.h")
