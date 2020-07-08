@@ -15,12 +15,14 @@ set(HEADERS_DIRS "src")
 set(SOURCES "src/main.cpp"
             "src/QueueUtils.cpp"
             "src/SwapChainUtils.cpp"
+            "src/ImageUtils.cpp"
             "src/VulkanDriver.cpp"
             "src/Application.cpp" )
 
 set(HEADERS  "src/stb_image.h"
             "src/QueueUtils.h"
             "src/SwapChainUtils.h"
+            "src/ImageUtils.h"
             "src/VulkanDriver.h"
             "src/Application.h")
 
