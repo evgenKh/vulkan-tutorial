@@ -17,7 +17,11 @@ public:
     {
         this->driver = vulkanDriver;
     }
+
     void createTextureImage(VkDevice device);
+    void createTextureImageView();
+    void createTextureSampler();
+
     void cleanup(VkDevice device);
 
 private:
@@ -29,5 +33,8 @@ private:
 
     VkImage textureImage;
     VkDeviceMemory textureImageMemory;
+    VkImageView textureImageView;
+    VkSampler textureSampler;
+
     VulkanDriver* driver;
 };
