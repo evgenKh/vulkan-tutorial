@@ -8,6 +8,8 @@
 #include <array>
 #include <string>
 
+class VulkanDriver;
+
 class SwapChainUtils
 {
 public:
@@ -17,6 +19,11 @@ public:
         std::vector<VkSurfaceFormatKHR> formats;
         std::vector<VkPresentModeKHR> presentModes;
     };
+
+    SwapChainUtils(VulkanDriver* vulkanDriver)
+    {
+        this->driver = vulkanDriver;
+    }
 
     void createSwapChain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, size_t framebufferWidth, size_t framebufferHeight);
     void createImageViews(VkDevice device);
@@ -59,5 +66,5 @@ private:
     VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats);
     VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes);
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities, size_t framebufferWidth, size_t framebufferHeight);
-    
+    VulkanDriver* driver;
 };

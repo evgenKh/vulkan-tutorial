@@ -21,7 +21,7 @@ public:
   
 
     struct Vertex {
-        glm::vec2 pos;
+        glm::vec3 pos;
         glm::vec3 color;
         glm::vec2 texCoord;
 
@@ -37,7 +37,7 @@ public:
             std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
             attributeDescriptions[0].binding = 0;
             attributeDescriptions[0].location = 0;
-            attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+            attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
             attributeDescriptions[0].offset = offsetof(Vertex, pos);
 
             attributeDescriptions[1].binding = 0;
@@ -68,6 +68,14 @@ public:
     VkDevice& GetDevice()
     {
         return device;
+    }
+    ImageUtils& GetImageUtils()
+    {
+        return imageUtils;
+    }
+    VkImageView& GetDepthImageView()
+    {
+        return depthImageView;
     }
 
 
@@ -116,6 +124,11 @@ private:
     void createDescriptorSets();
     void createCommandBuffers();
     void createSyncObjects();
+
+    void createDepthResources();
+    VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
+    VkFormat findDepthFormat();
+    bool hasStencilComponent(VkFormat format);
 
     //Textures
 
@@ -170,8 +183,17 @@ private:
     VkDescriptorPool descriptorPool;
     std::vector<VkDescriptorSet> descriptorSets;
 
-    //texture
+    //Image
     ImageUtils imageUtils;
+
+    VkImage textureImage;
+    VkDeviceMemory textureImageMemory;
+    VkImageView textureImageView;
+    VkSampler textureSampler;
+
+    VkImage depthImage;
+    VkDeviceMemory depthImageMemory;
+    VkImageView depthImageView;
 
 
 };
