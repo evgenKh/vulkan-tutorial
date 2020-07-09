@@ -24,6 +24,15 @@ public:
 
     void cleanup(VkDevice device);
 
+    VkImageView& GetTextureImageView(){
+        return textureImageView;
+    }
+    VkSampler& GetTextureSampler()
+    {
+        return textureSampler;
+    }
+
+
 private:
     void createImageInternal(uint32_t width, uint32_t height,
         VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
